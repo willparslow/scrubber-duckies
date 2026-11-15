@@ -67,7 +67,7 @@ function defaultJobs() {
     names.forEach((name, i) => {
       const id = `${freq[0]}-${slug(name)}`;
       jobs[id] = { name, freq, order: order++ };
-      if (name === 'Recycling') { jobs[id].note = 'Goes out Monday or Tuesday'; jobs[id].bin = true; }
+      if (name === 'Recycling') { jobs[id].days = [1, 4]; jobs[id].bin = true; }
       if (name === 'Black bin') jobs[id].bin = true;
       if (freq === 'monthly') { const [dn, color, hat] = RARE[i]; jobs[id].duck = { name: dn, color, hat }; }
     });
@@ -115,6 +115,31 @@ const tick = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4
 
 function startOfDay(t = Date.now()) { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
 function startOfWeek(t = Date.now()) { const d = new Date(startOfDay(t)); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); }
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
+/** "Mondays and Thursdays" */
+function daysLabel(days) {
+  const names = MON_FIRST.filter((d) => days.includes(d)).map((d) => DAY_NAMES[d] + 's');
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0] || '';
+}
+/** For a job on set days: when the current round started (the evening before its day counts,
+ *  so putting the bins out the night before ticks it off) and when it's next due. */
+function setDayRound(days) {
+  const today = new Date(startOfDay());
+  let start = null, next = null;
+  for (let k = 0; k <= 7 && start == null; k++) {
+    const d = new Date(today); d.setDate(d.getDate() - k);
+    const dayAfter = (d.getDay() + 1) % 7;
+    if (days.includes(dayAfter)) start = d.getTime();
+  }
+  for (let k = 0; k <= 7 && next == null; k++) {
+    const d = new Date(today); d.setDate(d.getDate() + k);
+    if (days.includes(d.getDay())) next = k;
+  }
+  return { start, next };
+}
+const nextLabel = (k, days) => k === 0 ? 'today' : k === 1 ? 'tomorrow' : DAY_NAMES[(new Date().getDay() + k) % 7];
 const daysAgo = (at) => Math.round((startOfDay() - startOfDay(at)) / 864e5);
 const hhmm = (at) => new Date(at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 function when(at) {
@@ -283,6 +308,10 @@ function status(job) {
   const last = lastFor(job.id);
   const days = last ? daysAgo(last.at) : null;
   if (job.freq === 'daily') return { last, days, done: !!last && last.at >= startOfDay() };
+  if (job.freq === 'weekly' && job.days?.length) {
+    const r = setDayRound(job.days);
+    return { last, days, done: !!last && last.at >= r.start, setDays: true, next: r.next };
+  }
   if (job.freq === 'weekly') return { last, days, done: !!last && last.at >= startOfWeek() };
   if (job.freq === 'fortnightly') {
     const done = last != null && days < 14;
@@ -443,7 +472,8 @@ function jobRow(job, opts = {}) {
     if (!st.last) sub = 'Not done yet';
     else if (st.done) sub = `${p.name} · ${st.days === 0 ? 'today' : plural(st.days, 'day') + ' ago'} · due again in ${plural(st.dueIn, 'day')}`;
     else sub = `Overdue · last done ${plural(st.days, 'day')} ago`;
-  } else sub = st.done ? `Done by ${p.name} · ${when(st.last.at)}` : (job.note || 'To do');
+  } else if (st.setDays && !st.done) sub = `${daysLabel(job.days)} · next ${nextLabel(st.next)}`;
+  else sub = st.done ? `Done by ${p.name} · ${when(st.last.at)}` : (job.note || 'To do');
   const style = p ? ` style="--pc:${p.color};--ps:${p.soft};--pi:${p.ink}"` : '';
   const cls = ['job', st.done ? 'done' : '', job.freq === 'fortnightly' && st.overdue && st.last ? 'overdue' : ''].join(' ');
   return `<button class="${cls}" data-action="job" data-id="${esc(job.id)}" aria-pressed="${st.done}"${style}>
@@ -453,7 +483,8 @@ function jobRow(job, opts = {}) {
 }
 function dueRow(job) {
   const st = status(job);
-  const sub = job.freq === 'weekly' ? (job.note || 'Weekly')
+  const sub = st.setDays ? `${daysLabel(job.days)} · next ${nextLabel(st.next)}`
+    : job.freq === 'weekly' ? (job.note || 'Weekly')
     : !st.last ? 'Fortnightly · not done yet'
     : st.overdue ? `Fortnightly · overdue (${st.days} days)` : `Fortnightly · due in ${plural(st.dueIn, 'day')}`;
   return `<button class="job" data-action="do" data-id="${esc(job.id)}">
@@ -469,16 +500,16 @@ function todayView() {
   const pct = daily.length ? Math.round(doneN / daily.length * 100) : 0;
   const msg = !daily.length ? 'No daily jobs set up.' : doneN === daily.length ? 'Clean sweep! Every daily job is done.' : `${daily.length - doneN} to go. Finish them all for a Clean Sweep bonus (+5).`;
 
-  // Bin reminder: Sunday to Tuesday until the recycling is out
-  const dow = new Date().getDay();
+  // Reminders for jobs on set days (like the recycling): the evening before and on the day, until it's done
   let bin = '';
-  const recycling = jobsOf('weekly').find((j) => j.bin);
-  if (recycling && !status(recycling).done && [0, 1, 2].includes(dow)) {
-    const black = jobsOf('fortnightly').find((j) => j.bin);
-    const bst = black && status(black);
-    const blackLine = black ? (bst.soon ? `${black.name} is due this week too` : `${black.name} isn’t due this week`) : '';
-    bin = `<div class="bin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>
-      <div><b>${dow === 0 ? `${esc(recycling.name)} goes out tomorrow` : `${esc(recycling.name)} goes out today`}</b><span>${esc(blackLine)}</span></div></div>`;
+  for (const j of jobsOf('weekly').filter((x) => x.days?.length)) {
+    const st = status(j);
+    if (st.done || st.next > 1) continue;
+    let extra = '';
+    const black = j.bin && jobsOf('fortnightly').find((x) => x.bin);
+    if (black) extra = status(black).soon ? `${black.name} is due this week too` : `${black.name} isn’t due this week`;
+    bin += `<div class="bin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>
+      <div><b>${esc(j.name)} goes out ${st.next === 0 ? 'today' : 'tomorrow'}</b><span>${esc(extra || daysLabel(j.days))}</span></div></div>`;
   }
 
   const due = [...jobsOf('weekly').filter((j) => !status(j).done), ...jobsOf('fortnightly').filter((j) => status(j).soon)];
@@ -565,8 +596,9 @@ function sheetHTML() {
     const groups = Object.entries(FREQS).map(([freq, f]) => `<h3>${f.label}</h3>${jobsOf(freq).map((j) => `
       <div class="edit-row"><label class="sr" for="jn-${esc(j.id)}">Name</label><input id="jn-${esc(j.id)}" class="field" data-action="rename" data-id="${esc(j.id)}" value="${esc(j.name)}">
       <label class="sr" for="jf-${esc(j.id)}">How often</label><select id="jf-${esc(j.id)}" class="field freq" data-action="refreq" data-id="${esc(j.id)}">${Object.keys(FREQS).map((k) => `<option value="${k}"${k === freq ? ' selected' : ''}>${FREQ_SHORT[k]}</option>`).join('')}</select>
-      <button class="icon-btn" data-action="del-job" data-id="${esc(j.id)}" aria-label="Remove ${esc(j.name)}"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button></div>`).join('')}`).join('');
-    body = `<h2>Change the jobs</h2><p>Type over a name to rename it, or change how often it happens. Removing a job keeps its duckies.</p>${groups}
+      <button class="icon-btn" data-action="del-job" data-id="${esc(j.id)}" aria-label="Remove ${esc(j.name)}"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button></div>
+      ${freq === 'weekly' ? `<div class="day-pick" role="group" aria-label="Days for ${esc(j.name)}"><span>${j.days?.length ? 'On' : 'Days'}</span>${MON_FIRST.map((d) => `<button class="day ${j.days?.includes(d) ? 'on' : ''}" data-action="toggle-day" data-id="${esc(j.id)}" data-d="${d}" aria-pressed="${!!j.days?.includes(d)}" aria-label="${DAY_NAMES[d]}">${DAY_LETTERS[d]}</button>`).join('')}</div>` : ''}`).join('')}`).join('');
+    body = `<h2>Change the jobs</h2><p>Type over a name to rename it, or change how often it happens. Weekly jobs can be set to particular days, like bin days: each of those days then needs ticking off. Removing a job keeps its duckies.</p>${groups}
       <form class="add-job" data-action="add-job"><h3>Add a job</h3>
         <label class="sr" for="new-job">New job</label><input id="new-job" class="field" name="name" placeholder="e.g. Hoover the stairs" required>
         <label class="sr" for="new-freq">How often</label><select id="new-freq" class="field" name="freq">${Object.entries(FREQS).map(([k, f]) => `<option value="${k}">${f.label.replace(' checks', '')}</option>`).join('')}</select>
@@ -657,6 +689,13 @@ const click = {
   },
   sound() { ui.sound = !ui.sound; ls.set('sd.sound', ui.sound ? '1' : '0'); render(); if (ui.sound) squeak(1); },
   manage() { openSheet({ type: 'jobs' }); },
+  'toggle-day'(el) {
+    const id = el.dataset.id, d = Number(el.dataset.d), job = S.jobs[id];
+    const days = new Set(job.days || []);
+    days.has(d) ? days.delete(d) : days.add(d);
+    const list = MON_FIRST.filter((x) => days.has(x));
+    update({ [`jobs.${id}.days`]: list.length ? list : DEL, ...(job.note && list.length ? { [`jobs.${id}.note`]: DEL } : {}) });
+  },
   'del-job'(el) {
     const id = el.dataset.id, name = S.jobs[id]?.name;
     ui.sheet = { type: 'confirm', title: `Remove “${name}”?`, text: 'It comes off the lists. Duckies already earned are kept.', ok: 'Remove job' };
@@ -784,6 +823,9 @@ function startData() {
       update(ch);
     }
     prune();
+    if (!m.fromCache && S.jobs['w-recycling']?.note === 'Goes out Monday or Tuesday' && !S.jobs['w-recycling'].days) {
+      update({ 'jobs.w-recycling.days': [1, 4], 'jobs.w-recycling.note': DEL });
+    }
     render();
   }, (err) => {
     console.error(err);
