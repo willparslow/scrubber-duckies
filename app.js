@@ -42,6 +42,7 @@ const FREQS = {
   fortnightly: { label: 'Fortnightly', pts: 5 },
   monthly: { label: 'Monthly checks', pts: 10 },
 };
+const FREQ_SHORT = { daily: 'Daily', weekly: 'Weekly', fortnightly: 'Fortnightly', monthly: 'Monthly' };
 const RARE = [
   ['Binjamin', '#7FD1AE', 'bandana'], ['Frosty Quackers', '#9AD7F5', 'goggles'], ['Duvet Duchess', '#C9A7F0', 'crown'],
   ['Pillow Fighter', '#FF9E7A', 'bandana'], ['Fluffy McTowel', '#F7A8C8', 'foam'], ['Captain Suds', '#FFC93C', 'captain'],
@@ -72,6 +73,12 @@ function defaultJobs() {
     });
   }
   return jobs;
+}
+/** The first rare duck not already given to a job */
+function spareDuck() {
+  const used = new Set(Object.values(S.jobs).map((j) => j.duck?.name).filter(Boolean));
+  const [name, color, hat] = [...RARE, ...SPARE_DUCKS].find(([n]) => !used.has(n)) || ['Mystery Duck', '#FFC93C', 'captain'];
+  return { name, color, hat };
 }
 function newHouse(person) {
   return {
@@ -557,8 +564,9 @@ function sheetHTML() {
   } else if (s.type === 'jobs') {
     const groups = Object.entries(FREQS).map(([freq, f]) => `<h3>${f.label}</h3>${jobsOf(freq).map((j) => `
       <div class="edit-row"><label class="sr" for="jn-${esc(j.id)}">Name</label><input id="jn-${esc(j.id)}" class="field" data-action="rename" data-id="${esc(j.id)}" value="${esc(j.name)}">
+      <label class="sr" for="jf-${esc(j.id)}">How often</label><select id="jf-${esc(j.id)}" class="field freq" data-action="refreq" data-id="${esc(j.id)}">${Object.keys(FREQS).map((k) => `<option value="${k}"${k === freq ? ' selected' : ''}>${FREQ_SHORT[k]}</option>`).join('')}</select>
       <button class="icon-btn" data-action="del-job" data-id="${esc(j.id)}" aria-label="Remove ${esc(j.name)}"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button></div>`).join('')}`).join('');
-    body = `<h2>Change the jobs</h2><p>Rename a job by typing over it. Removing a job keeps its duckies.</p>${groups}
+    body = `<h2>Change the jobs</h2><p>Type over a name to rename it, or change how often it happens. Removing a job keeps its duckies.</p>${groups}
       <form class="add-job" data-action="add-job"><h3>Add a job</h3>
         <label class="sr" for="new-job">New job</label><input id="new-job" class="field" name="name" placeholder="e.g. Hoover the stairs" required>
         <label class="sr" for="new-freq">How often</label><select id="new-freq" class="field" name="freq">${Object.entries(FREQS).map(([k, f]) => `<option value="${k}">${f.label.replace(' checks', '')}</option>`).join('')}</select>
@@ -691,6 +699,14 @@ document.addEventListener('change', (ev) => {
     const name = el.value.trim();
     if (name && name !== S.jobs[el.dataset.id]?.name) { update({ [`jobs.${el.dataset.id}.name`]: name }); toast('Renamed'); }
   }
+  if (el.dataset?.action === 'refreq') {
+    const id = el.dataset.id, freq = el.value, job = S.jobs[id];
+    if (!job || job.freq === freq) return;
+    const ch = { [`jobs.${id}.freq`]: freq };
+    if (freq === 'monthly' && !job.duck) ch[`jobs.${id}.duck`] = spareDuck();
+    update(ch);
+    toast(`${esc(job.name)} is now ${FREQ_SHORT[freq].toLowerCase()}`);
+  }
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.dataset?.action === 'rename') e.target.blur();
@@ -704,11 +720,7 @@ document.addEventListener('submit', async (ev) => {
     if (!name) return;
     const id = (() => { let base = `${freq[0]}-${slug(name)}`, k = base, n = 2; while (S.jobs[k]) k = `${base}-${n++}`; return k; })();
     const job = { name, freq, order: Math.max(0, ...Object.values(S.jobs).map((j) => j.order || 0)) + 1 };
-    if (freq === 'monthly') {
-      const used = new Set(Object.values(S.jobs).map((j) => j.duck?.name).filter(Boolean));
-      const [dn, color, hat] = [...RARE, ...SPARE_DUCKS].find(([n]) => !used.has(n)) || ['Mystery Duck', '#FFC93C', 'captain'];
-      job.duck = { name: dn, color, hat };
-    }
+    if (freq === 'monthly') job.duck = spareDuck();
     update({ [`jobs.${id}`]: job });
     toast(`Added ${esc(name)}`);
     f.reset();

@@ -81,7 +81,7 @@ If you see **"Not on the list"**, that account's email isn't in the rules: sign 
 When the other person ticks something off, a little note pops up on your phone.
 
 ### Changing the jobs
-*Pond → Change the jobs.* Rename by typing over a name, remove with the bin button, or add a new job with how often it happens. New monthly jobs get their own rare duck.
+*Pond → Change the jobs.* Rename by typing over a name, change how often a job happens with the menu next to it, remove with the bin button, or add a new job at the bottom. New monthly jobs get their own rare duck.
 
 ### No signal?
 Everything still works and is saved on the phone. The badge at the top shows **Offline · saved on phone**. When signal comes back it syncs and shows **Synced ✓**. Both of you ticking things at the same time never clashes: each job done is saved separately.
