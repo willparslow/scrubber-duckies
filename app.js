@@ -31,7 +31,7 @@ const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { retur
 
 const ui = {
   tab: ls.get('sd.tab') || 'today',
-  sheet: null,          // { type: 'undo', eid } | { type: 'jobs' } | { type: 'confirm', ... }
+  sheet: null,          // { type: 'undo', eid } | { type: 'jobs' } (Manage jobs) | { type: 'confirm', ... }
   sound: ls.get('sd.sound') !== '0',
 };
 
@@ -42,6 +42,9 @@ const FREQS = {
   fortnightly: { label: 'Fortnightly', pts: 5 },
   monthly: { label: 'Monthly checks', pts: 10 },
 };
+/** Duckies a job earns: its own score if one's been set, otherwise the default for how often it happens */
+const ptsOf = (job) => Number(job.pts) > 0 ? Number(job.pts) : FREQS[job.freq].pts;
+const sumPts = (jobs) => jobs.reduce((a, j) => a + ptsOf(j), 0);
 const FREQ_SHORT = { daily: 'Daily', weekly: 'Weekly', fortnightly: 'Fortnightly', monthly: 'Monthly' };
 const RARE = [
   ['Binjamin', '#7FD1AE', 'bandana'], ['Frosty Quackers', '#9AD7F5', 'goggles'], ['Duvet Duchess', '#C9A7F0', 'crown'],
@@ -399,7 +402,7 @@ function complete(id) {
   const job = { id, ...S.jobs[id] };
   const st = status(job);
   const before = totalDucks();
-  let pts = FREQS[job.freq].pts;
+  let pts = ptsOf(job);
   const overdue = job.freq === 'monthly' && st.days != null && st.days > 45;
   if (overdue) pts *= 2;
   let sweep = false;
@@ -479,7 +482,7 @@ function jobRow(job, opts = {}) {
   return `<button class="${cls}" data-action="job" data-id="${esc(job.id)}" aria-pressed="${st.done}"${style}>
     <span class="check">${st.done ? tick : ''}</span>
     <span class="main"><span class="name">${esc(job.name)}</span><span class="sub">${esc(sub)}</span></span>
-    <span class="chip ${job.freq}">+${FREQS[job.freq].pts}</span></button>`;
+    <span class="chip ${job.freq}">+${ptsOf(job)}</span></button>`;
 }
 function dueRow(job) {
   const st = status(job);
@@ -490,7 +493,7 @@ function dueRow(job) {
   return `<button class="job" data-action="do" data-id="${esc(job.id)}">
     <span class="check"></span>
     <span class="main"><span class="name">${esc(job.name)}</span><span class="sub ${st.overdue && st.last ? 'warn' : ''}">${esc(sub)}</span></span>
-    <span class="chip ${job.freq}">+${FREQS[job.freq].pts}</span></button>`;
+    <span class="chip ${job.freq}">+${ptsOf(job)}</span></button>`;
 }
 const sectionHead = (title, right) => `<div class="sec"><h2>${title}</h2><span>${right}</span></div>`;
 
@@ -516,14 +519,14 @@ function todayView() {
   return `<div class="hero"><div class="row1"><span>Today’s jobs</span><b>${doneN} of ${daily.length} done</b></div>
       <div class="bar"><i style="width:${pct}%"></i></div><p>${msg}</p></div>
     ${bin}
-    <section>${sectionHead('Every day', '+1 duckie each')}${daily.map((j) => jobRow(j)).join('')}</section>
+    <section>${sectionHead('Every day', `${sumPts(daily)} duckies to grab`)}${daily.map((j) => jobRow(j)).join('')}</section>
     <section>${sectionHead('Still to do this week', `${due.length} left`)}
       ${due.length ? due.map(dueRow).join('') : '<p class="happy">Everything for this week is done. Feet up!</p>'}</section>`;
 }
 
 function weekView() {
-  return `<section>${sectionHead('Weekly', '+3 each · resets Monday')}${jobsOf('weekly').map((j) => jobRow(j)).join('')}</section>
-    <section>${sectionHead('Fortnightly', '+5 · golden duck')}${jobsOf('fortnightly').map((j) => jobRow(j)).join('')}</section>`;
+  return `<section>${sectionHead('Weekly', 'resets Monday')}${jobsOf('weekly').map((j) => jobRow(j)).join('')}</section>
+    <section>${sectionHead('Fortnightly', 'golden duck')}${jobsOf('fortnightly').map((j) => jobRow(j)).join('')}</section>`;
 }
 
 function monthView() {
@@ -541,7 +544,7 @@ function monthView() {
         <span class="bar small ${tone}"><i style="width:${st.days === 0 ? 3 : pct}%"></i></span></div>
       <button class="btn ${st.done ? 'secondary' : 'dark'}" data-action="${st.done ? 'job' : 'do'}" data-id="${esc(j.id)}">${st.done ? 'Undo' : 'Done it'}</button></div>`;
   }).join('');
-  return `<section><div class="intro"><h2>Monthly checks</h2><p>Not every month, but here’s how long it’s been. Each one unlocks its own rare duck: +10, or +20 if it’s been more than 45 days.</p></div>${rows}</section>`;
+  return `<section><div class="intro"><h2>Monthly checks</h2><p>Not every month, but here’s how long it’s been. Each one unlocks its own rare duck, and earns double duckies if it’s been more than 45 days.</p></div>${rows}</section>`;
 }
 
 function pondView() {
@@ -573,7 +576,7 @@ function pondView() {
       <button class="btn t-month" data-action="demo" data-tier="monthly">Monthly · fireworks</button></div></div>
     <div class="card settings">
       <button class="row" data-action="sound"><span class="main">Sounds and buzzes</span><span class="toggle ${ui.sound ? 'on' : ''}" aria-hidden="true"><i></i></span></button>
-      <button class="row" data-action="manage"><span class="main">Change the jobs</span><span class="chev">›</span></button>
+      <button class="row" data-action="manage"><span class="main">Manage jobs</span><span class="chev">›</span></button>
       <button class="row" data-action="backup"><span class="main">Download a backup</span><span class="chev">›</span></button>
       <button class="row" data-action="sign-out"><span class="main">Sign out <small>${esc(me?.email || '')}</small></span><span class="chev">›</span></button>
     </div>`;
@@ -593,15 +596,28 @@ function sheetHTML() {
   } else if (s.type === 'confirm') {
     body = `<h2>${esc(s.title)}</h2><p>${esc(s.text)}</p><button class="btn danger" data-action="confirm-ok">${esc(s.ok)}</button><button class="btn ghost" data-action="close-sheet">Cancel</button>`;
   } else if (s.type === 'jobs') {
-    const groups = Object.entries(FREQS).map(([freq, f]) => `<h3>${f.label}</h3>${jobsOf(freq).map((j) => `
+    const card = (j, freq) => {
+      const p = ptsOf(j), custom = Number(j.pts) > 0 && Number(j.pts) !== FREQS[freq].pts;
+      return `<div class="edit-card">
       <div class="edit-row"><label class="sr" for="jn-${esc(j.id)}">Name</label><input id="jn-${esc(j.id)}" class="field" data-action="rename" data-id="${esc(j.id)}" value="${esc(j.name)}">
       <label class="sr" for="jf-${esc(j.id)}">How often</label><select id="jf-${esc(j.id)}" class="field freq" data-action="refreq" data-id="${esc(j.id)}">${Object.keys(FREQS).map((k) => `<option value="${k}"${k === freq ? ' selected' : ''}>${FREQ_SHORT[k]}</option>`).join('')}</select>
       <button class="icon-btn" data-action="del-job" data-id="${esc(j.id)}" aria-label="Remove ${esc(j.name)}"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button></div>
-      ${freq === 'weekly' ? `<div class="day-pick" role="group" aria-label="Days for ${esc(j.name)}"><span>${j.days?.length ? 'On' : 'Days'}</span>${MON_FIRST.map((d) => `<button class="day ${j.days?.includes(d) ? 'on' : ''}" data-action="toggle-day" data-id="${esc(j.id)}" data-d="${d}" aria-pressed="${!!j.days?.includes(d)}" aria-label="${DAY_NAMES[d]}">${DAY_LETTERS[d]}</button>`).join('')}</div>` : ''}`).join('')}`).join('');
-    body = `<h2>Change the jobs</h2><p>Type over a name to rename it, or change how often it happens. Weekly jobs can be set to particular days, like bin days: each of those days then needs ticking off. Removing a job keeps its duckies.</p>${groups}
+      ${freq === 'weekly' ? `<div class="day-pick" role="group" aria-label="Days for ${esc(j.name)}"><span>${j.days?.length ? 'On' : 'Days'}</span>${MON_FIRST.map((d) => `<button class="day ${j.days?.includes(d) ? 'on' : ''}" data-action="toggle-day" data-id="${esc(j.id)}" data-d="${d}" aria-pressed="${!!j.days?.includes(d)}" aria-label="${DAY_NAMES[d]}">${DAY_LETTERS[d]}</button>`).join('')}</div>` : ''}
+      <div class="pts-row"><span class="mini-duck">${duck('#FFC93C', 'none')}</span><span class="pts-label">Duckies${custom ? ` <small>(usual ${FREQS[freq].pts})</small>` : ''}</span>
+        <span class="stepper" role="group" aria-label="Duckies for ${esc(j.name)}">
+          <button data-action="pts" data-id="${esc(j.id)}" data-delta="-1" aria-label="One fewer duckie" ${p <= 1 ? 'disabled' : ''}>−</button>
+          <b aria-live="polite">${p}</b>
+          <button data-action="pts" data-id="${esc(j.id)}" data-delta="1" aria-label="One more duckie" ${p >= 50 ? 'disabled' : ''}>+</button>
+        </span></div></div>`;
+    };
+    const groups = Object.entries(FREQS).map(([freq, f]) => `<h3>${f.label}</h3>${jobsOf(freq).map((j) => card(j, freq)).join('')}`).join('');
+    body = `<h2>Manage jobs</h2><p>Rename a job by typing over it, change how often it happens, and set how many duckies it’s worth. Weekly jobs can be set to particular days, like bin days. Removing a job keeps the duckies already earned.</p>${groups}
       <form class="add-job" data-action="add-job"><h3>Add a job</h3>
         <label class="sr" for="new-job">New job</label><input id="new-job" class="field" name="name" placeholder="e.g. Hoover the stairs" required>
-        <label class="sr" for="new-freq">How often</label><select id="new-freq" class="field" name="freq">${Object.entries(FREQS).map(([k, f]) => `<option value="${k}">${f.label.replace(' checks', '')}</option>`).join('')}</select>
+        <div class="edit-row">
+          <label class="sr" for="new-freq">How often</label><select id="new-freq" class="field" name="freq">${Object.entries(FREQS).map(([k, f]) => `<option value="${k}">${f.label.replace(' checks', '')}</option>`).join('')}</select>
+          <label class="sr" for="new-pts">Duckies</label><input id="new-pts" class="field pts-in" name="pts" type="number" inputmode="numeric" min="1" max="50" placeholder="Duckies">
+        </div>
         <button class="btn dark">Add job</button></form>
       <button class="btn ghost" data-action="close-sheet">Done</button>`;
   }
@@ -689,6 +705,11 @@ const click = {
   },
   sound() { ui.sound = !ui.sound; ls.set('sd.sound', ui.sound ? '1' : '0'); render(); if (ui.sound) squeak(1); },
   manage() { openSheet({ type: 'jobs' }); },
+  pts(el) {
+    const id = el.dataset.id, job = S.jobs[id]; if (!job) return;
+    const n = Math.min(50, Math.max(1, ptsOf(job) + Number(el.dataset.delta)));
+    update({ [`jobs.${id}.pts`]: n === FREQS[job.freq].pts ? DEL : n });
+  },
   'toggle-day'(el) {
     const id = el.dataset.id, d = Number(el.dataset.d), job = S.jobs[id];
     const days = new Set(job.days || []);
@@ -742,6 +763,7 @@ document.addEventListener('change', (ev) => {
     const id = el.dataset.id, freq = el.value, job = S.jobs[id];
     if (!job || job.freq === freq) return;
     const ch = { [`jobs.${id}.freq`]: freq };
+    if (Number(job.pts) === FREQS[freq].pts) ch[`jobs.${id}.pts`] = DEL;
     if (freq === 'monthly' && !job.duck) ch[`jobs.${id}.duck`] = spareDuck();
     update(ch);
     toast(`${esc(job.name)} is now ${FREQ_SHORT[freq].toLowerCase()}`);
@@ -759,6 +781,8 @@ document.addEventListener('submit', async (ev) => {
     if (!name) return;
     const id = (() => { let base = `${freq[0]}-${slug(name)}`, k = base, n = 2; while (S.jobs[k]) k = `${base}-${n++}`; return k; })();
     const job = { name, freq, order: Math.max(0, ...Object.values(S.jobs).map((j) => j.order || 0)) + 1 };
+    const pts = Math.round(Number(f.querySelector('[name=pts]').value));
+    if (pts >= 1 && pts <= 50 && pts !== FREQS[freq].pts) job.pts = pts;
     if (freq === 'monthly') job.duck = spareDuck();
     update({ [`jobs.${id}`]: job });
     toast(`Added ${esc(name)}`);
