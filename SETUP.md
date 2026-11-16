@@ -80,6 +80,9 @@ If you see **"Not on the list"**, that account's email isn't in the rules: sign 
 
 When the other person ticks something off, a little note pops up on your phone.
 
+### One-off jobs
+On the Today tab, tap **+ Add** next to One-offs, type the job and set its duckies (2 to start with). It stays at the top of Today until one of you ticks it off, shows as done for the rest of that day, then drops off. It still appears under Recently done on the Pond tab.
+
 ### Managing the jobs
 *Pond → Manage jobs.* Each job has its own duckie score: use − and + to make a job worth more or less (the table above shows the starting amounts). Rename by typing over a name, change how often a job happens with the menu next to it, remove with the bin button, or add a new job at the bottom. Weekly jobs can be set to particular days (the recycling is Mondays and Thursdays): each of those days then needs ticking off, with a reminder the evening before. New monthly jobs get their own rare duck.
 

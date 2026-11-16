@@ -172,8 +172,10 @@ section { display: flex; flex-direction: column; gap: 8px; }
 @media (min-width: 600px) { .tabbar { left: 50%; right: auto; width: 560px; transform: translateX(-50%); border-radius: 20px 20px 0 0; border: 1px solid var(--line); } }
 
 /* Sheets */
-.sheet-bg { position: fixed; inset: 0; z-index: 40; background: rgba(18,52,59,.45); display: flex; align-items: flex-end; justify-content: center; animation: fade .2s ease-out; }
-.sheet { width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; background: #fff; border-radius: 24px 24px 0 0; padding: 22px 18px calc(var(--safe-b) + 18px); display: flex; flex-direction: column; gap: 10px; animation: up .25s ease-out; }
+.sheet-bg { position: fixed; inset: 0; z-index: 40; background: rgba(18,52,59,.45); display: flex; align-items: flex-end; justify-content: center; }
+.sheet-bg.enter { animation: fade .2s ease-out; }
+.sheet-bg.enter .sheet { animation: up .25s ease-out; }
+.sheet { width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; background: #fff; border-radius: 24px 24px 0 0; padding: 22px 18px calc(var(--safe-b) + 18px); display: flex; flex-direction: column; gap: 10px; }
 .sheet h2 { margin: 0; font-family: var(--round); font-size: 22px; }
 .sheet h3 { margin: 12px 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .sheet p { margin: 0 0 6px; color: var(--muted); line-height: 1.4; }
@@ -308,3 +310,8 @@ section { gap: 10px; }
 .month .btn { min-height: 38px; min-width: 76px; padding: 0 14px; font-size: 14px; font-weight: 700; border-radius: 12px; }
 .month .btn.dark { background: #1d4952; }
 .mduck { border-radius: 12px; }
+
+.add-link { border: 0; background: none; color: var(--blue-ink); font-weight: 700; font-size: 14px; padding: 6px 2px; }
+.add-oneoff { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 12px 14px; border: 1.5px dashed #b4cbcf; border-radius: 18px; background: rgba(255,255,255,.5); color: var(--muted); font-weight: 600; font-size: 15px; text-align: left; }
+.add-oneoff span { width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 1.75px solid #b4cbcf; display: grid; place-items: center; font-size: 18px; line-height: 1; color: var(--muted); }
+.chip.oneoff { background: #f1ebfb; color: #5b3f8f; }

@@ -43,7 +43,9 @@ const FREQS = {
   monthly: { label: 'Monthly checks', pts: 10 },
 };
 /** Duckies a job earns: its own score if one's been set, otherwise the default for how often it happens */
-const ptsOf = (job) => Number(job.pts) > 0 ? Number(job.pts) : FREQS[job.freq].pts;
+const ONEOFF_PTS = 2;
+const defaultPts = (freq) => FREQS[freq]?.pts ?? ONEOFF_PTS;
+const ptsOf = (job) => Number(job.pts) > 0 ? Number(job.pts) : defaultPts(job.freq);
 const sumPts = (jobs) => jobs.reduce((a, j) => a + ptsOf(j), 0);
 const FREQ_SHORT = { daily: 'Daily', weekly: 'Weekly', fortnightly: 'Fortnightly', monthly: 'Monthly' };
 const RARE = [
@@ -310,6 +312,7 @@ const totalDucks = () => Object.values(S.ducks).reduce((a, b) => a + Math.max(0,
 function status(job) {
   const last = lastFor(job.id);
   const days = last ? daysAgo(last.at) : null;
+  if (job.freq === 'oneoff') return { last, days, done: !!last, doneToday: !!last && last.at >= startOfDay() };
   if (job.freq === 'daily') return { last, days, done: !!last && last.at >= startOfDay() };
   if (job.freq === 'weekly' && job.days?.length) {
     const r = setDayRound(job.days);
@@ -413,6 +416,7 @@ function complete(id) {
   }
   const eid = `${Date.now().toString(36)}${rid()}`;
   const entry = { job: id, by: me.key, at: Date.now(), pts };
+  if (job.freq === 'oneoff') entry.name = job.name;
   if (sweep) entry.sweep = true;
   const isNewDuck = job.freq === 'monthly' && job.duck && !S.unlocked[id];
   if (isNewDuck) entry.unlocks = true;
@@ -427,6 +431,11 @@ function complete(id) {
   const by = person(me.key).name;
   if (sweep) celebrate('sweep', { title: 'Clean sweep!', sub: `All ${jobsOf('daily').length} daily jobs done today. Bonus duckies!`, pts, levelUp });
   else if (job.freq === 'daily') celebrate('daily', { title: pick(DAILY_TITLES), sub: `${job.name} · ${by}`, pts, levelUp });
+  else if (job.freq === 'oneoff') {
+    const tier = pts >= 10 ? 'fort' : pts >= 3 ? 'weekly' : 'daily';
+    const title = tier === 'fort' ? 'Golden Duck!' : tier === 'weekly' ? 'One-off, done and dusted!' : pick(DAILY_TITLES);
+    celebrate(tier, { title, sub: tier === 'daily' ? `${job.name} · ${by}` : `${job.name} done by ${by}`, pts, levelUp });
+  }
   else if (job.freq === 'weekly') celebrate('weekly', { title: job.bin ? 'Bin day hero!' : 'Splendid splash!', sub: `${job.name} done by ${by}`, pts, levelUp });
   else if (job.freq === 'fortnightly') celebrate('fort', { title: 'Golden Duck!', sub: `${job.name} done by ${by}`, pts, levelUp });
   else {
@@ -443,7 +452,7 @@ function undo(eid) {
   const ch = { [`log.${eid}`]: DEL, [`ducks.${e.by}`]: INC(-(e.pts || 0)) };
   if (e.unlocks) ch[`unlocked.${e.job}`] = DEL;   // that rare duck goes back in its egg
   update(ch);
-  toast(`Undone: ${esc(S.jobs[e.job]?.name || 'job')}`);
+  toast(`Undone: ${esc(S.jobs[e.job]?.name || e.name || 'job')}`);
 }
 
 /* ---------------- render ---------------- */
@@ -475,6 +484,8 @@ function jobRow(job, opts = {}) {
     if (!st.last) sub = 'Not done yet';
     else if (st.done) sub = `${p.name} · ${st.days === 0 ? 'today' : plural(st.days, 'day') + ' ago'} · due again in ${plural(st.dueIn, 'day')}`;
     else sub = `Overdue · last done ${plural(st.days, 'day')} ago`;
+  } else if (job.freq === 'oneoff' && !st.done) {
+    sub = `One-off · added by ${person(job.by).name} ${when(job.created || Date.now()).replace(/ \d\d:\d\d$/, '')}`;
   } else if (st.setDays && !st.done) sub = `${daysLabel(job.days)} · next ${nextLabel(st.next)}`;
   else sub = st.done ? `Done by ${p.name} · ${when(st.last.at)}` : (job.note || 'To do');
   const style = p ? ` style="--pc:${p.color};--ps:${p.soft};--pi:${p.ink}"` : '';
@@ -515,10 +526,15 @@ function todayView() {
       <div><b>${esc(j.name)} goes out ${st.next === 0 ? 'today' : 'tomorrow'}</b><span>${esc(extra || daysLabel(j.days))}</span></div></div>`;
   }
 
+  // One-offs stay until done, then show as done for the rest of that day
+  const oneoffs = jobsOf('oneoff').filter((j) => { const st = status(j); return !st.done || st.doneToday; })
+    .sort((a, b) => Number(status(a).done) - Number(status(b).done) || (a.created || 0) - (b.created || 0));
   const due = [...jobsOf('weekly').filter((j) => !status(j).done), ...jobsOf('fortnightly').filter((j) => status(j).soon)];
   return `<div class="hero"><div class="row1"><span>Today’s jobs</span><b>${doneN} of ${daily.length} done</b></div>
       <div class="bar"><i style="width:${pct}%"></i></div><p>${msg}</p></div>
     ${bin}
+    <section>${sectionHead('One-offs', '<button class="add-link" data-action="add-oneoff">+ Add</button>')}
+      ${oneoffs.length ? oneoffs.map((j) => jobRow(j)).join('') : '<button class="add-oneoff" data-action="add-oneoff"><span>+</span>Add a one-off job</button>'}</section>
     <section>${sectionHead('Every day', `${sumPts(daily)} duckies to grab`)}${daily.map((j) => jobRow(j)).join('')}</section>
     <section>${sectionHead('Still to do this week', `${due.length} left`)}
       ${due.length ? due.map(dueRow).join('') : '<p class="happy">Everything for this week is done. Feet up!</p>'}</section>`;
@@ -560,7 +576,7 @@ function pondView() {
     return `<div class="coll ${u ? '' : 'locked'}"><span>${duck(u ? d.color : LOCKED, u ? d.hat : 'none', u ? d.name : 'Locked duck')}</span><b>${u ? esc(d.name) : '???'}</b><small>${esc(j.name)}</small></div>`;
   }).join('');
   const recent = entries().slice(0, 12).map((e) => {
-    const p = person(e.by), j = S.jobs[e.job];
+    const p = person(e.by), j = S.jobs[e.job] || (e.name ? { name: e.name } : null);
     return `<li><span class="dot" style="background:${p.color}"></span><span class="main"><b>${esc(j?.name || 'Old job')}</b><small>${esc(p.name)} · ${esc(when(e.at))}</small></span><span class="chip">+${e.pts}</span></li>`;
   }).join('');
   return `<div class="hero level"><span class="bob big-duck">${duck('#FFC93C', 'captain')}</span>
@@ -590,27 +606,42 @@ function sheetHTML() {
     if (!e || !j) { ui.sheet = null; return ''; }
     const p = person(e.by);
     body = `<h2>${esc(j.name)}</h2><p>Done by ${esc(p.name)}, ${esc(when(e.at))}. That earned ${duckies(e.pts)}.</p>
-      ${j.freq !== 'daily' && j.freq !== 'weekly' ? `<button class="btn dark" data-action="again" data-id="${esc(e.job)}">Done it again today</button>` : ''}
+      ${!['daily', 'weekly', 'oneoff'].includes(j.freq) ? `<button class="btn dark" data-action="again" data-id="${esc(e.job)}">Done it again today</button>` : ''}
       <button class="btn danger" data-action="undo" data-eid="${esc(s.eid)}">Undo it (take back ${e.pts})</button>
+      <button class="btn ghost" data-action="close-sheet">Cancel</button>`;
+  } else if (s.type === 'oneoff') {
+    const p = s.pts;
+    body = `<h2>Add a one-off job</h2><p>It sits at the top of Today until one of you does it.</p>
+      <form class="add-job" data-action="save-oneoff">
+        <label class="sr" for="oo-name">Job</label><input id="oo-name" class="field" name="name" placeholder="e.g. Clear out the garage" maxlength="80" required autocomplete="off">
+        <div class="pts-row"><span class="mini-duck">${duck('#FFC93C', 'none')}</span><span class="pts-label">Duckies</span>
+          <span class="stepper" role="group" aria-label="Duckies for this job">
+            <button type="button" data-action="oo-pts" data-delta="-1" aria-label="One fewer duckie" ${p <= 1 ? 'disabled' : ''}>−</button>
+            <b aria-live="polite">${p}</b>
+            <button type="button" data-action="oo-pts" data-delta="1" aria-label="One more duckie" ${p >= 50 ? 'disabled' : ''}>+</button>
+          </span></div>
+        <button class="btn dark">Add to Today</button></form>
       <button class="btn ghost" data-action="close-sheet">Cancel</button>`;
   } else if (s.type === 'confirm') {
     body = `<h2>${esc(s.title)}</h2><p>${esc(s.text)}</p><button class="btn danger" data-action="confirm-ok">${esc(s.ok)}</button><button class="btn ghost" data-action="close-sheet">Cancel</button>`;
   } else if (s.type === 'jobs') {
     const card = (j, freq) => {
-      const p = ptsOf(j), custom = Number(j.pts) > 0 && Number(j.pts) !== FREQS[freq].pts;
+      const p = ptsOf(j), custom = freq !== 'oneoff' && Number(j.pts) > 0 && Number(j.pts) !== defaultPts(freq);
       return `<div class="edit-card">
       <div class="edit-row"><label class="sr" for="jn-${esc(j.id)}">Name</label><input id="jn-${esc(j.id)}" class="field" data-action="rename" data-id="${esc(j.id)}" value="${esc(j.name)}">
-      <label class="sr" for="jf-${esc(j.id)}">How often</label><select id="jf-${esc(j.id)}" class="field freq" data-action="refreq" data-id="${esc(j.id)}">${Object.keys(FREQS).map((k) => `<option value="${k}"${k === freq ? ' selected' : ''}>${FREQ_SHORT[k]}</option>`).join('')}</select>
+      ${freq === 'oneoff' ? '' : `<label class="sr" for="jf-${esc(j.id)}">How often</label><select id="jf-${esc(j.id)}" class="field freq" data-action="refreq" data-id="${esc(j.id)}">${Object.keys(FREQS).map((k) => `<option value="${k}"${k === freq ? ' selected' : ''}>${FREQ_SHORT[k]}</option>`).join('')}</select>`}
       <button class="icon-btn" data-action="del-job" data-id="${esc(j.id)}" aria-label="Remove ${esc(j.name)}"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button></div>
       ${freq === 'weekly' ? `<div class="day-pick" role="group" aria-label="Days for ${esc(j.name)}"><span>${j.days?.length ? 'On' : 'Days'}</span>${MON_FIRST.map((d) => `<button class="day ${j.days?.includes(d) ? 'on' : ''}" data-action="toggle-day" data-id="${esc(j.id)}" data-d="${d}" aria-pressed="${!!j.days?.includes(d)}" aria-label="${DAY_NAMES[d]}">${DAY_LETTERS[d]}</button>`).join('')}</div>` : ''}
-      <div class="pts-row"><span class="mini-duck">${duck('#FFC93C', 'none')}</span><span class="pts-label">Duckies${custom ? ` <small>(usual ${FREQS[freq].pts})</small>` : ''}</span>
+      <div class="pts-row"><span class="mini-duck">${duck('#FFC93C', 'none')}</span><span class="pts-label">Duckies${custom ? ` <small>(usual ${defaultPts(freq)})</small>` : ''}</span>
         <span class="stepper" role="group" aria-label="Duckies for ${esc(j.name)}">
           <button data-action="pts" data-id="${esc(j.id)}" data-delta="-1" aria-label="One fewer duckie" ${p <= 1 ? 'disabled' : ''}>−</button>
           <b aria-live="polite">${p}</b>
           <button data-action="pts" data-id="${esc(j.id)}" data-delta="1" aria-label="One more duckie" ${p >= 50 ? 'disabled' : ''}>+</button>
         </span></div></div>`;
     };
-    const groups = Object.entries(FREQS).map(([freq, f]) => `<h3>${f.label}</h3>${jobsOf(freq).map((j) => card(j, freq)).join('')}`).join('');
+    const pendingOneoffs = jobsOf('oneoff').filter((j) => !status(j).done);
+    const groups = (pendingOneoffs.length ? `<h3>One-offs still to do</h3>${pendingOneoffs.map((j) => card(j, 'oneoff')).join('')}` : '')
+      + Object.entries(FREQS).map(([freq, f]) => `<h3>${f.label}</h3>${jobsOf(freq).map((j) => card(j, freq)).join('')}`).join('');
     body = `<h2>Manage jobs</h2><p>Rename a job by typing over it, change how often it happens, and set how many duckies it’s worth. Weekly jobs can be set to particular days, like bin days. Removing a job keeps the duckies already earned.</p>${groups}
       <form class="add-job" data-action="add-job"><h3>Add a job</h3>
         <label class="sr" for="new-job">New job</label><input id="new-job" class="field" name="name" placeholder="e.g. Hoover the stairs" required>
@@ -621,7 +652,10 @@ function sheetHTML() {
         <button class="btn dark">Add job</button></form>
       <button class="btn ghost" data-action="close-sheet">Done</button>`;
   }
-  return `<div class="sheet-bg" data-action="sheet-bg"><div class="sheet" role="dialog" aria-modal="true">${body}</div></div>`;
+  // Only animate when a sheet first opens, not every time it's redrawn (e.g. tapping + or −)
+  const enter = ui.sheetEnter ? ' enter' : '';
+  ui.sheetEnter = false;
+  return `<div class="sheet-bg${enter}" data-action="sheet-bg"><div class="sheet" role="dialog" aria-modal="true">${body}</div></div>`;
 }
 
 function render() {
@@ -677,7 +711,7 @@ function friendlyAuth(e) {
 
 /* ---------------- actions ---------------- */
 let confirmFn = null;
-function openSheet(s) { ui.sheet = s; sheetEl.innerHTML = sheetHTML(); }
+function openSheet(s) { const fresh = !ui.sheet; ui.sheet = s; ui.sheetEnter = fresh; sheetEl.innerHTML = sheetHTML(); }
 function closeSheet() { ui.sheet = null; confirmFn = null; sheetEl.innerHTML = ''; }
 
 const click = {
@@ -705,10 +739,17 @@ const click = {
   },
   sound() { ui.sound = !ui.sound; ls.set('sd.sound', ui.sound ? '1' : '0'); render(); if (ui.sound) squeak(1); },
   manage() { openSheet({ type: 'jobs' }); },
+  'add-oneoff'() { openSheet({ type: 'oneoff', pts: ONEOFF_PTS }); setTimeout(() => document.getElementById('oo-name')?.focus(), 50); },
+  'oo-pts'(el) {
+    const name = document.getElementById('oo-name')?.value || '';
+    ui.sheet.pts = Math.min(50, Math.max(1, ui.sheet.pts + Number(el.dataset.delta)));
+    sheetEl.innerHTML = sheetHTML();
+    document.getElementById('oo-name').value = name;
+  },
   pts(el) {
     const id = el.dataset.id, job = S.jobs[id]; if (!job) return;
     const n = Math.min(50, Math.max(1, ptsOf(job) + Number(el.dataset.delta)));
-    update({ [`jobs.${id}.pts`]: n === FREQS[job.freq].pts ? DEL : n });
+    update({ [`jobs.${id}.pts`]: n === FREQS[job.freq]?.pts ? DEL : n });
   },
   'toggle-day'(el) {
     const id = el.dataset.id, d = Number(el.dataset.d), job = S.jobs[id];
@@ -776,6 +817,15 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('submit', async (ev) => {
   const f = ev.target; ev.preventDefault();
   const a = f.dataset.action;
+  if (a === 'save-oneoff') {
+    const name = f.querySelector('[name=name]').value.trim();
+    if (!name) return;
+    const id = `o-${Date.now().toString(36)}${rid()}`;
+    update({ [`jobs.${id}`]: { name, freq: 'oneoff', pts: ui.sheet?.pts || ONEOFF_PTS, by: me.key, created: Date.now(), order: Date.now() } });
+    closeSheet();
+    toast(`Added ${esc(name)} to Today`);
+    return;
+  }
   if (a === 'add-job') {
     const name = f.querySelector('[name=name]').value.trim(), freq = f.querySelector('[name=freq]').value;
     if (!name) return;
@@ -813,7 +863,7 @@ function noticeOthers() {
   if (fresh.length) {
     const e = fresh.sort((a, b) => b.at - a.at)[0];
     const p = person(e.by), more = fresh.length > 1 ? ` and ${fresh.length - 1} more` : '';
-    toast(`<span class="toast-duck">${duck('#FFC93C', 'foam')}</span><span><b>${esc(p.name)}</b> did ${esc(S.jobs[e.job]?.name || 'a job')}${more} · +${fresh.reduce((a, x) => a + (x.pts || 0), 0)}</span>`, 3500);
+    toast(`<span class="toast-duck">${duck('#FFC93C', 'foam')}</span><span><b>${esc(p.name)}</b> did ${esc(S.jobs[e.job]?.name || e.name || 'a job')}${more} · +${fresh.reduce((a, x) => a + (x.pts || 0), 0)}</span>`, 3500);
   }
 }
 /** Keeps the document small: log entries over 120 days old go, except each job's latest. */
@@ -826,6 +876,7 @@ function prune() {
   const keepIds = new Set(Object.values(latest));
   const ch = {};
   for (const [eid, e] of Object.entries(S.log)) if (e.at < cutoff && !keepIds.has(eid)) ch[`log.${eid}`] = DEL;
+  for (const j of jobsOf('oneoff')) { const st = status(j); if (st.done && st.days > 7) ch[`jobs.${j.id}`] = DEL; }
   if (Object.keys(ch).length) update(ch);
 }
 function startData() {
