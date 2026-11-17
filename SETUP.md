@@ -1,5 +1,8 @@
 # Scrubber Duckies: setup guide
 
+> **Sharing with other people.** Each house is private. To let someone start their own house, go to **Pond → Admin → Make a new invite code** and send them the code with the app's link. They sign in, tap **Set up a house**, enter the code and choose to start with a ready-made job list or an empty one. To add someone to *your* house instead, go to **Pond → Your house → Invite** and enter their Gmail address. **Pond → Admin → Share my jobs as the starter list** makes your current jobs (and duckie scores) the ready-made list for new houses.
+
+
 About 20 minutes, all free, done once. It's the same recipe as the Meal Planner.
 
 The app comes in two parts:
@@ -19,7 +22,7 @@ Until step 2 is done, the app runs in **demo mode**: everything works, but it on
 4. **Create the database:** go to *Build → Firestore Database → Create database*.
    - Location: choose **europe-west2 (London)**.
    - Start in **production mode**.
-5. **Lock it down:** in Firestore, open the **Rules** tab. Paste in the contents of `firestore.rules`, replace `WILL_EMAIL` and `TESSA_EMAIL` with your two Gmail addresses (all lower case, keep the quotes), then click **Publish**.
+5. **Lock it down:** in Firestore, open the **Rules** tab. Paste in the contents of `firestore.rules`, replace `ADMIN_EMAIL` with your Gmail address and `LEGACY_EMAIL_1` and `LEGACY_EMAIL_2` with yours and Tessa's (all lower case, keep the quotes), then click **Publish**.
 
 ## 2. Get the app's Firebase config (about 2 min)
 
@@ -51,13 +54,13 @@ These values are safe to put on a public website. What keeps your data private i
 ## 4. Set up each phone (about 2 min each)
 
 1. Open the link on the phone **while you have signal**.
-2. Tap **Continue with Google** and pick the Gmail address you put in the rules. The first of you to sign in sets the house up with the full job list; the second joins it automatically.
+2. Tap **Continue with Google** and pick the Gmail address you put in the rules. You (the admin) tap **Set up a house**. Then invite your partner from **Pond → Your house**; they sign in and tap **Join**.
 3. **Add it to the home screen:**
    - **iPhone (Safari):** tap Share → *Add to Home Screen*.
    - **Android (Chrome):** tap ⋮ → *Install app* (or *Add to Home screen*).
 4. Open it once from the home screen icon. From then on it opens and works with no signal.
 
-If you see **"Not on the list"**, that account's email isn't in the rules: sign out and pick the other account, or fix the address in the rules.
+
 
 ---
 

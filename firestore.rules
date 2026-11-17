@@ -1,20 +1,95 @@
 rules_version = '2';
 
-// Scrubber Duckies: one shared house, open only to the two of you.
-// Paste into Firebase console → Firestore Database → Rules, put your two email
-// addresses in place of WILL_EMAIL and TESSA_EMAIL (all lower case), then Publish.
+// Scrubber Duckies: a private space per house.
+// Paste into Firebase console → Firestore Database → Rules, with ADMIN_EMAIL and the two
+// LEGACY emails filled in (all lower case), then Publish. The copy in this repo keeps them as
+// placeholders on purpose, because the repo is public.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function allowed() {
+    function signedIn() {
       return request.auth != null
         && request.auth.token.email != null
-        && request.auth.token.email_verified == true
-        && request.auth.token.email.lower() in ['WILL_EMAIL', 'TESSA_EMAIL'];
+        && request.auth.token.email_verified == true;
+    }
+    function myEmail() { return request.auth.token.email; }
+    function isAdmin() { return signedIn() && myEmail() == 'ADMIN_EMAIL'; }
+    function homePath(hid) { return /databases/$(database)/documents/homes/$(hid); }
+    function isMemberOf(hid) { return signedIn() && myEmail() in get(homePath(hid)).data.get('memberEmails', []); }
+    function codePath(code) { return /databases/$(database)/documents/inviteCodes/$(code); }
+    function invitePath(email) { return /databases/$(database)/documents/invites/$(email); }
+
+    // ---- Houses: one document per house ----
+    match /homes/{hid} {
+      function members() { return resource.data.get('memberEmails', []); }
+      function isMember() { return signedIn() && myEmail() in members(); }
+
+      // The original house (homes/main) from before houses could be shared: lets its two owners in, to add themselves.
+      function isLegacyOwner() {
+        return signedIn() && hid == 'main'
+          && myEmail() in ['LEGACY_EMAIL_1', 'LEGACY_EMAIL_2'];
+      }
+
+      // Joining: you have an invite for this house and you only add yourself.
+      function isJoining() {
+        return signedIn()
+          && exists(invitePath(myEmail()))
+          && get(invitePath(myEmail())).data.homeId == hid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberEmails', 'members', 'pendingInvites'])
+          && request.resource.data.memberEmails == members().concat([myEmail()]);
+      }
+
+      // Creating: you're the only member, and you're the admin or use an unused invite code,
+      // which is marked as used by this house in the same write.
+      function isCreating() {
+        let code = request.resource.data.get('createdWithCode', '');
+        return signedIn()
+          && request.resource.data.memberEmails == [myEmail()]
+          && (isAdmin()
+              || (code is string && code != ''
+                  && exists(codePath(code))
+                  && get(codePath(code)).data.usedBy == null
+                  && getAfter(codePath(code)).data.usedBy == hid));
+      }
+
+      allow get: if isMember() || isLegacyOwner() || isAdmin();
+      allow list: if isAdmin() || (signedIn() && myEmail() in resource.data.memberEmails);
+      allow create: if isCreating();
+      allow update: if isMember() || isLegacyOwner() || isJoining();
+      allow delete: if isMember();
     }
 
-    match /homes/{home} {
-      allow read, write: if allowed();
+    // ---- Email invites: one per invited email address ----
+    match /invites/{inviteEmail} {
+      allow get: if signedIn() && (myEmail() == inviteEmail || isMemberOf(resource.data.homeId));
+      allow create: if signedIn()
+        && inviteEmail == inviteEmail.lower()
+        && isMemberOf(request.resource.data.homeId);
+      allow delete: if signedIn() && (myEmail() == inviteEmail || isMemberOf(resource.data.homeId));
+    }
+
+    // ---- Invite codes for new houses (made by the admin, each used once) ----
+    match /inviteCodes/{code} {
+      allow get: if signedIn();
+      allow list, create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        signedIn()
+        && resource.data.usedBy == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy', 'usedByName', 'usedAt'])
+        && request.resource.data.usedBy is string
+        && getAfter(homePath(request.resource.data.usedBy)).data.createdWithCode == code
+        && getAfter(homePath(request.resource.data.usedBy)).data.memberEmails == [myEmail()]);
+    }
+
+    // ---- The starter job list new houses can copy (published by the admin) ----
+    match /starter/{doc} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // ---- The app checks this to decide whether to show the Admin section ----
+    match /admin/{doc} {
+      allow read: if isAdmin();
     }
   }
 }
