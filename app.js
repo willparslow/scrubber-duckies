@@ -1306,6 +1306,11 @@ function startData() {
       if (!S.members[me.key]) ch[`members.${me.key}`] = { name: me.name, email: me.email, joined: Date.now() };
       if (S.ducks[me.key] == null) ch[`ducks.${me.key}`] = 0;
       if (!S.name) ch.name = 'Our house';
+      // The original house from before sharing: everyone already in it stays in it, even if they haven't opened the new version yet
+      if (hid === 'main') {
+        const missing = Object.values(S.members).map((m) => (m.email || '').toLowerCase()).filter((e) => e && !S.memberEmails.includes(e));
+        if (missing.length) ch.memberEmails = [...S.memberEmails, ...missing];
+      }
       if (Object.keys(ch).length) update(ch);
     }
     prune();
