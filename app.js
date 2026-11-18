@@ -1102,11 +1102,11 @@ const click = {
     const code = el.dataset.code;
     copyText(`🦆 You're invited to Scrubber Duckies, an app for keeping on top of house jobs (with a rubber duckie for every job done)!
 
-1. Open this link in Safari (iPhone) or Chrome (Android): ${appLink()}
+1. Open this link in your browser: ${appLink()}
 2. Sign in with Google, or with an email and password
 3. Tap "Set up a house" and enter your code: ${code}
 4. Choose the ready-made job list or start empty
-5. Add it to your home screen (Safari: Share → Add to Home Screen)
+5. Add it to your home screen (Share → Add to Home Screen) and it will look and behave just like an installed app
 
 The code works once. If Google sign-in won't work, copy the link straight into Safari or Chrome rather than opening it from here.`, 'Invite message copied. Paste it into WhatsApp or an email.');
   },
@@ -1114,10 +1114,10 @@ The code works once. If Google sign-in won't work, copy the link straight into S
     const email = el.dataset.email;
     copyText(`🦆 I've added you to ${S.name || 'our house'} on Scrubber Duckies, our house jobs app!
 
-1. Open this link in Safari (iPhone) or Chrome (Android): ${appLink()}
+1. Open this link in your browser: ${appLink()}
 2. Sign in with Google using ${email}
 3. Tap "Join ${S.name || 'the house'}"
-4. Add it to your home screen (Safari: Share → Add to Home Screen)
+4. Add it to your home screen (Share → Add to Home Screen) and it will look and behave just like an installed app
 
 If Google sign-in won't work, copy the link straight into Safari or Chrome rather than opening it from here.`, 'Invite message copied. Paste it into WhatsApp or an email.');
   },
