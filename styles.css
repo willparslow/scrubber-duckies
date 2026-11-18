@@ -345,3 +345,6 @@ section { gap: 10px; }
 .link { border: 0; background: none; color: var(--blue-ink); font-weight: 700; font-size: 14px; padding: 8px 4px; min-height: 40px; }
 .link.danger { color: var(--red); }
 .btn.secondary { background: #eef2f3; color: var(--ink); }
+
+.copy-text { resize: none; font-family: inherit; font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
+.member .link + .link { margin-left: 2px; }

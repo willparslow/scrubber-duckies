@@ -829,7 +829,7 @@ function sheetHTML() {
         <label class="sr" for="invite-email">Their email</label><input id="invite-email" class="field" type="email" name="email" placeholder="Their Gmail address" autocomplete="off" autocapitalize="none" required>
         <button class="btn dark">Send invite</button>
         <p class="hint">They open the app, sign in with that address and join with one tap. They’ll see all of this house’s jobs and duckies.</p></form>
-      ${pending.map((p) => `<div class="member"><span class="main"><b>${esc(p.email)}</b><small>Invited, not joined yet</small></span><button class="link" data-action="cancel-invite" data-email="${esc(p.email)}">Cancel</button></div>`).join('')}
+      ${pending.map((p) => `<div class="member"><span class="main"><b>${esc(p.email)}</b><small>Invited, not joined yet</small></span><button class="link" data-action="copy-invite-msg" data-email="${esc(p.email)}">Copy message</button><button class="link danger" data-action="cancel-invite" data-email="${esc(p.email)}">Cancel</button></div>`).join('')}
       <button class="btn danger" data-action="leave-house">Leave this house</button>
       <button class="btn ghost" data-action="close-sheet">Done</button>`;
   } else if (s.type === 'admin') {
@@ -839,7 +839,7 @@ function sheetHTML() {
       <h3>Invite codes for new houses</h3>
       <p>Each code lets one person set up their own private house. They won’t see yours.</p>
       ${a.codes.length ? a.codes.map((c) => `<div class="member code ${c.usedBy ? 'used' : ''}"><span class="main"><b>${esc(c.code)}</b><small>${c.usedBy ? `Used by ${esc(c.usedByName || 'a house')} · ${fmt(c.usedAt)}` : 'Not used yet'}</small></span>
-        ${c.usedBy ? '' : `<button class="link" data-action="copy-code" data-code="${esc(c.code)}">Copy</button><button class="link danger" data-action="del-code" data-code="${esc(c.code)}" aria-label="Delete code ${esc(c.code)}">Delete</button>`}</div>`).join('') : '<p class="hint">No codes yet.</p>'}
+        ${c.usedBy ? '' : `<button class="link" data-action="copy-code-msg" data-code="${esc(c.code)}">Copy invite message</button><button class="link danger" data-action="del-code" data-code="${esc(c.code)}" aria-label="Delete code ${esc(c.code)}">Delete</button>`}</div>`).join('') : '<p class="hint">No codes yet.</p>'}
       <button class="btn dark" data-action="new-code">Make a new invite code</button>
       <h3>Starter job list</h3>
       <p>New houses can start with a copy of your jobs and duckie scores. They never see your ticks, duckies or one-offs, and set bin days aren’t copied.</p>
@@ -848,6 +848,10 @@ function sheetHTML() {
       <h3>Houses</h3>
       <p class="hint">${a.houses.map((h) => `${esc(h.name)}${h.id === hid ? ' (yours)' : ''} · ${plural(h.count, 'person').replace('persons', 'people')}`).join('<br>')}</p>
       <button class="btn ghost" data-action="close-sheet">Done</button>`;
+  } else if (s.type === 'copy') {
+    body = `<h2>Copy this message</h2><p>Your phone didn’t let the app copy it, so press and hold the text below, choose Select All, then Copy.</p>
+      <label class="sr" for="copy-text">Invite message</label><textarea id="copy-text" class="field copy-text" readonly rows="12">${esc(s.text)}</textarea>
+      <button class="btn ghost" data-action="${s.back ? 'confirm-back' : 'close-sheet'}">Done</button>`;
   } else if (s.type === 'confirm') {
     body = `<h2>${esc(s.title)}</h2><p>${esc(s.text)}</p><button class="btn danger" data-action="confirm-ok">${esc(s.ok)}</button><button class="btn ghost" data-action="${s.back ? 'confirm-back' : 'close-sheet'}">Cancel</button>`;
   } else if (s.type === 'jobs') {
@@ -998,6 +1002,13 @@ function friendlyAuth(e) {
 let confirmFn = null;
 function openSheet(s) { const fresh = !ui.sheet; ui.sheet = s; ui.sheetEnter = fresh; sheetEl.innerHTML = sheetHTML(); }
 function closeSheet() { ui.sheet = null; confirmFn = null; sheetEl.innerHTML = ''; }
+/** The app's own address, wherever it's hosted */
+const appLink = () => location.origin + location.pathname.replace(/index\.html$/, '');
+/** Copy to the clipboard; if the phone won't allow it, show the text so it can be copied by hand */
+async function copyText(text, done) {
+  try { await navigator.clipboard.writeText(text); toast(done, 3000); }
+  catch { openSheet({ type: 'copy', text, back: ui.sheet && ui.sheet.type !== 'copy' ? { ...ui.sheet } : null }); }
+}
 function openConfirm(title, text, ok, fn, back = null) {
   ui.sheet = { type: 'confirm', title, text, ok, back };
   confirmFn = fn;
@@ -1086,6 +1097,29 @@ const click = {
   admin() { openSheet({ type: 'admin' }); loadAdmin(); },
   async 'new-code'() {
     try { const code = await store.newCode(); await loadAdmin(); toast(`New code: ${esc(code)}`); } catch (e) { toast(`Couldn’t make a code: ${esc(e.code || e.message)}`); }
+  },
+  'copy-code-msg'(el) {
+    const code = el.dataset.code;
+    copyText(`🦆 You're invited to Scrubber Duckies, an app for keeping on top of house jobs (with a rubber duckie for every job done)!
+
+1. Open this link in Safari (iPhone) or Chrome (Android): ${appLink()}
+2. Sign in with Google, or with an email and password
+3. Tap "Set up a house" and enter your code: ${code}
+4. Choose the ready-made job list or start empty
+5. Add it to your home screen (Safari: Share → Add to Home Screen)
+
+The code works once. If Google sign-in won't work, copy the link straight into Safari or Chrome rather than opening it from here.`, 'Invite message copied. Paste it into WhatsApp or an email.');
+  },
+  'copy-invite-msg'(el) {
+    const email = el.dataset.email;
+    copyText(`🦆 I've added you to ${S.name || 'our house'} on Scrubber Duckies, our house jobs app!
+
+1. Open this link in Safari (iPhone) or Chrome (Android): ${appLink()}
+2. Sign in with Google using ${email}
+3. Tap "Join ${S.name || 'the house'}"
+4. Add it to your home screen (Safari: Share → Add to Home Screen)
+
+If Google sign-in won't work, copy the link straight into Safari or Chrome rather than opening it from here.`, 'Invite message copied. Paste it into WhatsApp or an email.');
   },
   async 'copy-code'(el) {
     const code = el.dataset.code;
