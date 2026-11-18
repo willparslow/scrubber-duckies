@@ -500,16 +500,21 @@ function person(key) {
 const totalDucks = () => Object.values(S.ducks).reduce((a, b) => a + Math.max(0, Number(b) || 0), 0);
 
 /** Where a job stands right now */
+/** How many times a job's been done since `since`, and by whom (in order, no repeats) */
+function roundOf(jobId, since) {
+  const es = Object.values(S.log).filter((e) => e.job === jobId && e.at >= since).sort((a, b) => a.at - b.at);
+  return { count: es.length, doers: [...new Set(es.map((e) => e.by))] };
+}
 function status(job) {
   const last = lastFor(job.id);
   const days = last ? daysAgo(last.at) : null;
   if (job.freq === 'oneoff') return { last, days, done: !!last, doneToday: !!last && last.at >= startOfDay() };
-  if (job.freq === 'daily') return { last, days, done: !!last && last.at >= startOfDay() };
+  if (job.freq === 'daily') return { last, days, done: !!last && last.at >= startOfDay(), ...roundOf(job.id, startOfDay()) };
   if (job.freq === 'weekly' && job.days?.length) {
     const r = setDayRound(job.days);
-    return { last, days, done: !!last && last.at >= r.start, setDays: true, next: r.next };
+    return { last, days, done: !!last && last.at >= r.start, setDays: true, next: r.next, ...roundOf(job.id, r.start) };
   }
-  if (job.freq === 'weekly') return { last, days, done: !!last && last.at >= startOfWeek() };
+  if (job.freq === 'weekly') return { last, days, done: !!last && last.at >= startOfWeek(), ...roundOf(job.id, startOfWeek()) };
   if (job.freq === 'fortnightly') {
     const done = last != null && days < 14;
     return { last, days, done, dueIn: last ? 14 - days : 0, overdue: !done, soon: !last || days >= 10 };
@@ -678,6 +683,7 @@ function jobRow(job, opts = {}) {
   } else if (job.freq === 'oneoff' && !st.done) {
     sub = `One-off · added by ${person(job.by).name} ${when(job.created || Date.now()).replace(/ \d\d:\d\d$/, '')}`;
   } else if (st.setDays && !st.done) sub = `${daysLabel(job.days)} · next ${nextLabel(st.next)}`;
+  else if (st.done && st.count > 1) sub = `Done ${st.count}× · ${st.doers.map((k) => person(k).name).join(' & ')} · last ${when(st.last.at).replace(/^today /, '')}`;
   else sub = st.done ? `Done by ${p.name} · ${when(st.last.at)}` : (job.note || 'To do');
   const style = p ? ` style="--pc:${p.color};--ps:${p.soft};--pi:${p.ink}"` : '';
   const cls = ['job', st.done ? 'done' : '', job.freq === 'fortnightly' && st.overdue && st.last ? 'overdue' : ''].join(' ');
@@ -797,10 +803,12 @@ function sheetHTML() {
   if (s.type === 'undo') {
     const e = S.log[s.eid]; const j = e && S.jobs[e.job];
     if (!e || !j) { ui.sheet = null; return ''; }
-    const p = person(e.by);
-    body = `<h2>${esc(j.name)}</h2><p>Done by ${esc(p.name)}, ${esc(when(e.at))}. That earned ${duckies(e.pts)}.</p>
-      ${!['daily', 'weekly', 'oneoff'].includes(j.freq) ? `<button class="btn dark" data-action="again" data-id="${esc(e.job)}">Done it again today</button>` : ''}
-      <button class="btn danger" data-action="undo" data-eid="${esc(s.eid)}">Undo it (take back ${e.pts})</button>
+    const p = person(e.by), st = status({ id: e.job, ...j });
+    const period = j.freq === 'daily' ? 'today' : j.days?.length ? 'for this collection' : 'this week';
+    const times = st.count > 1 ? `Done ${st.count} times ${period}. The latest was by ${esc(p.name)}, ${esc(when(e.at))}, earning ${duckies(e.pts)}.` : `Done by ${esc(p.name)}, ${esc(when(e.at))}. That earned ${duckies(e.pts)}.`;
+    body = `<h2>${esc(j.name)}</h2><p>${times}</p>
+      ${j.freq !== 'oneoff' ? `<button class="btn dark" data-action="again" data-id="${esc(e.job)}">Done it again ${j.freq === 'daily' || j.freq === 'weekly' ? '' : 'today '}(${duckies(ptsOf(j))})</button>` : ''}
+      <button class="btn danger" data-action="undo" data-eid="${esc(s.eid)}">Undo ${st.count > 1 ? 'the latest one' : 'it'} (take back ${e.pts})</button>
       <button class="btn ghost" data-action="close-sheet">Cancel</button>`;
   } else if (s.type === 'oneoff') {
     const p = s.pts;
