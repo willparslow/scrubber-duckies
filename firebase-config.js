@@ -21,7 +21,7 @@ export const firebaseConfig = {
 
 // Push notifications: Firebase console → Project settings → Cloud Messaging → Web Push certificates →
 // the "Key pair" (a long string starting with B). Leave as null to keep notifications switched off.
-export const vapidKey = null;
+export const vapidKey = "BEhiuxpTFdYnsGjfkxV28YMR7yA891DMBk37xJtWygYFZoCOSD3_9WaIOC1AhHiNk2DPLTLDZCjRTqXQMP785bs";
 
 // Firebase library version loaded from Google's CDN (cached for offline use by sw.js)
 export const FIREBASE_VERSION = '10.14.1';
