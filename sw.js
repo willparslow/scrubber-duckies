@@ -1,7 +1,7 @@
 // Service worker: keeps the app itself available with no signal.
 // Your data's offline storage is handled separately by Firebase.
 // Bump VERSION whenever you change the app files so phones pick up the update.
-const VERSION = 'scrubber-duckies-v12';
+const VERSION = 'scrubber-duckies-v13';
 const SHELL = [
   './', './index.html', './app.js', './styles.css', './firebase-config.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
@@ -20,7 +20,7 @@ self.addEventListener('install', (e) => {
       const version = text.match(/FIREBASE_VERSION\s*=\s*['"]([^'"]+)/)?.[1];
       const configured = !/firebaseConfig\s*=\s*null/.test(text);
       if (version && configured) {
-        await cache.addAll(['firebase-app.js', 'firebase-firestore.js', 'firebase-auth.js'].map((f) => `${FIREBASE_CDN}${version}/${f}`));
+        await cache.addAll(['firebase-app.js', 'firebase-firestore.js', 'firebase-auth.js', 'firebase-messaging.js'].map((f) => `${FIREBASE_CDN}${version}/${f}`));
       }
     } catch { /* fetched and cached on first use instead */ }
     self.skipWaiting();
@@ -53,5 +53,29 @@ self.addEventListener('fetch', (e) => {
     }).catch(() => null);
     if (cached) { e.waitUntil(network); return cached; }
     return (await network) || new Response('Offline', { status: 503, statusText: 'Offline' });
+  })());
+});
+
+// ---- Push notifications (sent by the Cloud Function in /functions) ----
+self.addEventListener('push', (e) => {
+  let msg = {};
+  try { msg = e.data ? e.data.json() : {}; } catch { msg = { data: { title: 'Scrubber Duckies', body: e.data?.text() || '' } }; }
+  const d = msg.data || msg.notification || msg;
+  e.waitUntil(self.registration.showNotification(d.title || 'Scrubber Duckies', {
+    body: d.body || '',
+    tag: d.tag || undefined,
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    data: { url: d.url || './' },
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = all.find((c) => c.url.startsWith(self.registration.scope));
+    if (open) return open.focus();
+    return self.clients.openWindow(self.registration.scope);
   })());
 });

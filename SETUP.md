@@ -97,3 +97,32 @@ If the app files change, upload them to GitHub and change `VERSION` at the top o
 
 ### Backups
 *Pond → Download a backup* saves everything as a file. History older than 120 days is tidied away automatically (the last time each job was done is always kept).
+
+---
+
+## Push notifications (optional, about 20 minutes once)
+
+Notifications are sent by a small Cloud Function (the `functions` folder), which runs in your Firebase project whenever a house changes.
+
+### On your phone or computer
+1. **Switch to the pay-as-you-go plan.** In the Firebase console, tap **Upgrade** (bottom of the menu, next to "Spark") and choose **Blaze**, then add a card. Light use like this stays inside the free allowance. Set a **budget alert** (for example £1) when it offers, so you'd hear about any charge.
+2. **Make the notification key.** Go to **Project settings → Cloud Messaging → Web Push certificates → Generate key pair**. Copy the long key it shows (it starts with **B**) and put it in `firebase-config.js` as `vapidKey` (or send it to Claude).
+3. **Update the database rules** with the latest `firestore.rules` (fill in the emails as before) and tap **Publish**.
+
+### Deploy the function (once, plus again whenever `functions/` changes)
+You can do this on a computer, or in **Google Cloud Shell** (https://shell.cloud.google.com), which runs in any browser, phone included. Sign in with the same Google account as Firebase.
+
+```
+npm install -g firebase-tools
+firebase login --no-localhost
+git clone https://github.com/willparslow/scrubber-duckies.git
+cd scrubber-duckies/functions && npm install && cd ..
+firebase deploy --only functions
+```
+
+- `firebase login --no-localhost` gives you a link. Open it, sign in, then paste the code it shows back into the terminal.
+- The first deploy switches on a few Google Cloud services, which takes a few minutes. If it asks about a **cleanup policy** for container images, press Enter to accept the default.
+- If it says the **region** doesn't match your database, change `REGION` at the top of `functions/index.js` (`eur3` → `europe-west1`, `nam5` → `us-central1`) and deploy again.
+
+### Then on each phone
+Open the app **from the home-screen icon** (iPhones only allow notifications there), then go to **Pond → Notifications → Turn on notifications** and tap **Allow**. Use **Show a test notification** to check. Each phone chooses what it wants to hear about.

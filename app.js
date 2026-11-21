@@ -1,4 +1,6 @@
-import { firebaseConfig, FIREBASE_VERSION } from './firebase-config.js';
+import * as cfg from './firebase-config.js';
+const { firebaseConfig, FIREBASE_VERSION } = cfg;
+const VAPID_KEY = cfg.vapidKey || null;   // optional: only needed for push notifications
 
 /* ------------------------------------------------------------------ *
  *  Scrubber Duckies: house jobs, with a duckie for every one done.
@@ -462,6 +464,28 @@ async function firebaseStore() {
     deleteCode: (code) => fs.deleteDoc(D('inviteCodes', code)),
     publishStarter: (jobs) => fs.setDoc(D('starter', 'current'), starterFrom(jobs)),
 
+    /* -- push notifications -- */
+    pushAvailable: () => !!VAPID_KEY,
+    async enablePush(prefs) {
+      const msg = await import(`${base}/firebase-messaging.js`);
+      if (!(await msg.isSupported())) throw houseErr('This phone or browser can’t do notifications.');
+      const reg = await navigator.serviceWorker.ready;
+      const token = await msg.getToken(msg.getMessaging(fapp), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+      if (!token) throw houseErr('Couldn’t get a notification address for this phone.');
+      const me = meNow();
+      await fs.setDoc(D('pushTokens', me.uid), { homeId: hid, email: me.email, key: me.key, tokens: fs.arrayUnion(token), prefs, updatedAt: Date.now() }, { merge: true });
+      return token;
+    },
+    async disablePush(token) {
+      const me = meNow();
+      try { const msg = await import(`${base}/firebase-messaging.js`); await msg.deleteToken(msg.getMessaging(fapp)); } catch {}
+      await fs.updateDoc(D('pushTokens', me.uid), { tokens: fs.arrayRemove(token) }).catch(() => {});
+    },
+    async pushPrefs() { const d = await fs.getDoc(D('pushTokens', meNow().uid)).catch(() => null); return d?.exists() ? d.data().prefs || null : null; },
+    setPushPrefs: (prefs) => fs.updateDoc(D('pushTokens', meNow().uid), { prefs, updatedAt: Date.now() }),
+    /** Notifications follow you to whichever house you're in */
+    syncPushHome(id) { fs.updateDoc(D('pushTokens', meNow().uid), { homeId: id, updatedAt: Date.now() }).catch(() => {}); },
+
     open(id) { ref = H(id); },
     close() { ref = null; },
     start(fn, onErr) {
@@ -790,6 +814,7 @@ function pondView() {
     <div class="card settings">
       <button class="row" data-action="sound"><span class="main">Sounds and buzzes</span><span class="toggle ${ui.sound ? 'on' : ''}" aria-hidden="true"><i></i></span></button>
       <button class="row" data-action="manage"><span class="main">Manage jobs</span><span class="chev">›</span></button>
+      <button class="row" data-action="notify"><span class="main">Notifications <small>${pushOnHere() ? 'On for this phone' : 'Off'}</small></span><span class="chev">›</span></button>
       <button class="row" data-action="house"><span class="main">Your house <small>${esc(S.name || '')} · ${plural(memberList().length, 'person').replace('persons', 'people')}</small></span><span class="chev">›</span></button>
       ${isAdminUser ? '<button class="row" data-action="admin"><span class="main">Admin <small>Invite codes and the starter job list</small></span><span class="chev">›</span></button>' : ''}
       <button class="row" data-action="backup"><span class="main">Download a backup</span><span class="chev">›</span></button>
@@ -855,6 +880,31 @@ function sheetHTML() {
       <button class="btn secondary" data-action="publish-starter">${a.starter ? 'Update it from my jobs' : 'Share my jobs as the starter list'}</button>
       <h3>Houses</h3>
       <p class="hint">${a.houses.map((h) => `${esc(h.name)}${h.id === hid ? ' (yours)' : ''} · ${plural(h.count, 'person').replace('persons', 'people')}`).join('<br>')}</p>
+      <button class="btn ghost" data-action="close-sheet">Done</button>`;
+  } else if (s.type === 'notify') {
+    const prefs = { ...PUSH_DEFAULTS, ...(ui.pushPrefs || {}) };
+    const sw = (k, label, hint) => `<button class="row" data-action="push-pref" data-k="${k}" aria-pressed="${!!prefs[k]}"><span class="main">${label}<small>${hint}</small></span><span class="toggle ${prefs[k] ? 'on' : ''}" aria-hidden="true"><i></i></span></button>`;
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const iphone = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    let inner;
+    if (store.kind === 'demo' || !store.pushAvailable?.()) inner = '<p>Notifications aren’t set up for this app yet.</p>';
+    else if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      inner = iphone && !standalone
+        ? '<p>iPhones only allow notifications from the home-screen app. Open Scrubber Duckies from its icon on your home screen (Share → Add to Home Screen if it isn’t there yet), then come back here.</p>'
+        : '<p>This browser can’t show notifications. Try the home-screen app, or Chrome.</p>';
+    } else if (Notification.permission === 'denied') {
+      inner = `<p>Notifications are blocked for this app. Turn them on in your phone’s ${iphone ? 'Settings → Notifications → Scrubber Duckies' : 'settings for this app or site'}, then come back here.</p>`;
+    } else if (!pushOnHere()) {
+      inner = `<p>Get a notification on this phone when someone else in ${esc(S.name || 'your house')} ticks a job off, adds a one-off, unlocks a rare duck, or when the house goes up a level.</p>
+        <button class="btn dark" data-action="push-on" ${ui.pushBusy ? 'disabled' : ''}>${ui.pushBusy ? 'Turning on…' : 'Turn on notifications'}</button>
+        ${ui.pushError ? `<p class="err">${esc(ui.pushError)}</p>` : ''}`;
+    } else {
+      inner = `<p>On for this phone. Notify me when…</p>
+        <div class="card settings">${sw('jobs', 'Someone ticks a job off', 'Including Clean Sweeps')}${sw('oneoffs', 'Someone adds a one-off job', '')}${sw('ducks', 'A rare duck is unlocked', 'Monthly jobs')}${sw('levels', 'The house goes up a level', 'Including when you did it')}</div>
+        <button class="btn secondary" data-action="push-test">Show a test notification</button>
+        <button class="btn danger" data-action="push-off">Turn off on this phone</button>`;
+    }
+    body = `<h2>Notifications</h2>${inner}<p class="hint">You won’t be notified about your own jobs. Each phone is set up separately.</p>
       <button class="btn ghost" data-action="close-sheet">Done</button>`;
   } else if (s.type === 'copy') {
     body = `<h2>Copy this message</h2><p>Your phone didn’t let the app copy it, so press and hold the text below, choose Select All, then Copy.</p>
@@ -1010,6 +1060,8 @@ function friendlyAuth(e) {
 let confirmFn = null;
 function openSheet(s) { const fresh = !ui.sheet; ui.sheet = s; ui.sheetEnter = fresh; sheetEl.innerHTML = sheetHTML(); }
 function closeSheet() { ui.sheet = null; confirmFn = null; sheetEl.innerHTML = ''; }
+const PUSH_DEFAULTS = { jobs: true, oneoffs: true, ducks: true, levels: true };
+const pushOnHere = () => !!(me && ls.get(`sd.push:${me.uid}`)) && typeof Notification !== 'undefined' && Notification.permission === 'granted';
 /** The app's own address, wherever it's hosted */
 const appLink = () => location.origin + location.pathname.replace(/index\.html$/, '');
 /** Copy to the clipboard; if the phone won't allow it, show the text so it can be copied by hand */
@@ -1054,6 +1106,43 @@ const click = {
   },
   sound() { ui.sound = !ui.sound; ls.set('sd.sound', ui.sound ? '1' : '0'); render(); if (ui.sound) squeak(1); },
   manage() { openSheet({ type: 'jobs' }); },
+  async notify() {
+    ui.pushError = null;
+    openSheet({ type: 'notify' });
+    if (pushOnHere()) { const p = await store.pushPrefs?.(); if (p) { ui.pushPrefs = p; if (ui.sheet?.type === 'notify') sheetEl.innerHTML = sheetHTML(); } }
+  },
+  async 'push-on'() {
+    // Ask straight away, inside the tap: iPhones only allow the question in direct response to one
+    let perm;
+    try { perm = await Notification.requestPermission(); } catch { perm = Notification.permission; }
+    if (perm !== 'granted') { ui.pushError = perm === 'denied' ? 'Notifications were blocked. You can allow them in your phone’s settings.' : 'Notifications weren’t allowed.'; return openSheet({ type: 'notify' }); }
+    ui.pushBusy = true; ui.pushError = null; openSheet({ type: 'notify' });
+    try {
+      ui.pushPrefs = { ...PUSH_DEFAULTS, ...(ui.pushPrefs || {}) };
+      const token = await store.enablePush(ui.pushPrefs);
+      ls.set(`sd.push:${me.uid}`, token);
+      toast('Notifications on 🦆');
+    } catch (e) { console.error(e); ui.pushError = e.friendly || `Couldn’t turn them on: ${e.code || e.message}`; }
+    ui.pushBusy = false; render();
+  },
+  async 'push-off'() {
+    const token = ls.get(`sd.push:${me.uid}`);
+    try { localStorage.removeItem(`sd.push:${me.uid}`); } catch {}
+    await store.disablePush?.(token);
+    toast('Notifications off for this phone'); render();
+  },
+  'push-pref'(el) {
+    const k = el.dataset.k;
+    ui.pushPrefs = { ...PUSH_DEFAULTS, ...(ui.pushPrefs || {}), [k]: !({ ...PUSH_DEFAULTS, ...(ui.pushPrefs || {}) })[k] };
+    sheetEl.innerHTML = sheetHTML();
+    store.setPushPrefs?.(ui.pushPrefs).catch(() => toast('Couldn’t save that. Check your signal.'));
+  },
+  async 'push-test'() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification('🦆 Quack! Notifications work', { body: 'This is how jobs from the rest of the house will appear.', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'test' });
+    } catch (e) { toast(`Couldn’t show one: ${esc(e.message)}`); }
+  },
   'add-oneoff'() { openSheet({ type: 'oneoff', pts: ONEOFF_PTS }); setTimeout(() => document.getElementById('oo-name')?.focus(), 50); },
   'oo-pts'(el) {
     const name = document.getElementById('oo-name')?.value || '';
@@ -1308,6 +1397,7 @@ function leaveHouseLocally() {
 }
 function openHouse(id) {
   hid = id; ls.set(`sd.hid:${me.uid}`, id);
+  if (ls.get(`sd.push:${me.uid}`)) store.syncPushHome?.(id);
   onboarding = null; store.open(id); startData();
 }
 /** Find this person's house (or an invite to one) and open it. */

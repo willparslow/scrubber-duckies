@@ -19,5 +19,9 @@ export const firebaseConfig = {
   appId: "1:218531507425:web:9f8b5270f528d82014dba0"
 };
 
+// Push notifications: Firebase console → Project settings → Cloud Messaging → Web Push certificates →
+// the "Key pair" (a long string starting with B). Leave as null to keep notifications switched off.
+export const vapidKey = null;
+
 // Firebase library version loaded from Google's CDN (cached for offline use by sw.js)
 export const FIREBASE_VERSION = '10.14.1';
